@@ -78,6 +78,93 @@ curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:8000/health
 
 The server will be accessible at `http://YOUR_PI_IP:8000`
 
+#### Docker Compose Configuration Reference
+
+Here's the complete `docker-compose.yml` configuration:
+
+```yaml
+version: '3.8'
+
+services:
+  solax-http:
+    # Build the image from the project Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Optional: for Raspberry Pi 64-bit
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    
+    # Container name for easy reference
+    container_name: solax-cloud-http
+    
+    # Port mapping: expose port 8000 on the host
+    ports:
+      - "8000:8000"
+    
+    # Environment variables (loaded from .env file)
+    environment:
+      # SolaX API credentials
+      SOLAX_CLIENT_ID: ${SOLAX_CLIENT_ID}
+      SOLAX_CLIENT_SECRET: ${SOLAX_CLIENT_SECRET}
+      SOLAX_DEVICE_SN: ${SOLAX_DEVICE_SN}
+      
+      # HTTP server configuration
+      TRANSPORT: http                    # Use HTTP mode (not MCP/stdio)
+      HTTP_HOST: 0.0.0.0                # Listen on all interfaces
+      HTTP_PORT: 8000                   # Port number
+      HTTP_API_KEY: ${HTTP_API_KEY}     # Bearer token for authentication
+    
+    # Restart policy: restart unless manually stopped
+    restart: unless-stopped
+    
+    # Health check: verify the server is running
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s           # Check every 30 seconds
+      timeout: 10s            # Wait up to 10 seconds for response
+      retries: 3              # Mark unhealthy after 3 failed checks
+      start_period: 5s        # Give container 5s to start before first check
+
+# Optional: Uncomment below to run MCP mode instead of HTTP mode
+# (Not recommended for Raspberry Pi; HTTP is lighter-weight)
+#
+#  solax-mcp:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: solax-cloud-mcp
+#    environment:
+#      SOLAX_CLIENT_ID: ${SOLAX_CLIENT_ID}
+#      SOLAX_CLIENT_SECRET: ${SOLAX_CLIENT_SECRET}
+#      SOLAX_DEVICE_SN: ${SOLAX_DEVICE_SN}
+#      TRANSPORT: stdio        # Use MCP mode (stdio-based)
+#    stdin_open: true
+#    tty: true
+#    restart: unless-stopped
+```
+
+**Key Configuration Options:**
+
+| Setting | Purpose | Example |
+|---------|---------|---------|
+| `SOLAX_CLIENT_ID` | OAuth2 Client ID from SolaX | `abc123xyz` |
+| `SOLAX_CLIENT_SECRET` | OAuth2 Client Secret from SolaX | `secret123xyz` |
+| `SOLAX_DEVICE_SN` | Inverter serial number (default device) | `X3ABCD0123` |
+| `HTTP_API_KEY` | Bearer token for API authentication | `YWJjMTIzaG...` |
+| `HTTP_HOST` | Network interface to bind to | `0.0.0.0` (all), `127.0.0.1` (localhost) |
+| `HTTP_PORT` | Port number | `8000` |
+| `TRANSPORT` | Execution mode | `http` or `stdio` |
+
+**Health Check Explanation:**
+
+The health check runs every 30 seconds and:
+- Calls `curl -f http://localhost:8000/health`
+- Expects a 200 HTTP response
+- Waits up to 10 seconds for a response
+- After 3 consecutive failures, marks the container as unhealthy (but doesn't stop it)
+- Waits 5 seconds after container start before first check (startup grace period)
+
 ### HTTP API Endpoints
 
 All endpoints (except `/health`) require a bearer token:
