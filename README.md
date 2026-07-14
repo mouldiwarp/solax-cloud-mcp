@@ -191,6 +191,129 @@ Once registered, the `get_realtime_data` tool is available in your MCP toolset. 
 
 Claude will call `get_realtime_data()` and report the results to you in human-friendly terms.
 
+## Docker: Build, Deploy & HTTP Consumption
+
+For containerized deployment on Raspberry Pi or any Docker-enabled system, you can run the server in HTTP mode:
+
+### Build the Docker Image
+
+```bash
+# Build the image
+docker build -t solax-cloud-mcp:latest .
+
+# Verify the build
+docker images | grep solax-cloud-mcp
+```
+
+### Deploy with Docker Compose
+
+Configure your environment variables first:
+
+```bash
+# Copy and edit the environment file
+cp .env.example .env
+nano .env
+```
+
+Fill in your SolaX credentials and generate a strong API key:
+
+```env
+SOLAX_CLIENT_ID=your_client_id
+SOLAX_CLIENT_SECRET=your_client_secret
+SOLAX_DEVICE_SN=your_device_sn
+HTTP_API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+```
+
+Start the HTTP server:
+
+```bash
+# Build and start the container in the background
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f solax-http
+
+# Verify it's running
+curl http://localhost:8000/health
+```
+
+The server listens on port **8000** and is accessible at `http://YOUR_PI_IP:8000`.
+
+### Consume the HTTP API
+
+All endpoints (except `/health`) require a bearer token in the `Authorization` header.
+
+#### Health Check (no authentication)
+
+```bash
+curl http://192.168.1.100:8000/health
+```
+
+Response:
+```json
+{"status": "ok"}
+```
+
+#### Get Real-Time Inverter Data
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"device_sn": "X3ABCD0123"}' \
+  http://192.168.1.100:8000/api/realtime-data
+```
+
+Returns current power output, battery SOC, grid export/import, and more.
+
+#### Set Battery Self-Use Mode
+
+Configure battery charging/discharging thresholds:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_sn": "X3ABCD0123",
+    "min_soc": 20,
+    "charge_upper_soc": 80,
+    "charge_from_grid_enable": 1
+  }' \
+  http://192.168.1.100:8000/api/battery/self-use-mode
+```
+
+### Python / JavaScript Examples
+
+Quick examples in Python and JavaScript are available in **[HTTP_API.md](HTTP_API.md)**, including:
+- Polling for real-time updates
+- Time-based battery scheduling
+- Error handling patterns
+- Rate limiting considerations
+
+### Deployment on Raspberry Pi
+
+Full deployment instructions (Docker installation, network setup, security, monitoring) are in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+### Docker Management
+
+```bash
+# View logs
+docker-compose logs -f solax-http
+
+# Restart the server
+docker-compose restart solax-http
+
+# Stop the server
+docker-compose down
+
+# Rebuild after code changes
+docker-compose up -d --build
+
+# Check resource usage
+docker stats solax-http
+```
+
 ## Manual Testing
 
 ### Quick Smoke Test
