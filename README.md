@@ -1,24 +1,31 @@
 # SolaX Cloud MCP Server
 
-An MCP server that provides real-time access to solar inverter data from the SolaX Cloud API. Query your inverter's current power output, energy yields, battery status, and grid import/export data directly from Claude Code or Claude Desktop.
+An MCP server that provides real-time access to solar inverter data from the SolaX Developer Platform API. Query your inverter's current power output, energy yields, battery status, and grid import/export data directly from Claude Code or Claude Desktop.
 
 ## Prerequisites
 
 - **Python 3.10+** (automatically provisioned by `uv`)
 - **uv** package manager ([install here](https://astral.sh/uv/))
-- A SolaX Cloud account with API access enabled
-- WiFi dongle registration number (`wifiSn`) for your inverter
+- A SolaX Developer Platform account with OAuth2 application registered
+- Device (inverter) serial number (`deviceSn`) for your inverter
 
 ## Getting Started
 
-### 1. Obtain Your SolaX API Credentials
+### 1. Register an OAuth2 Application
 
-1. Log in to [SolaX Cloud](https://www.solaxcloud.com/user-center/)
-2. Navigate to **Service → API**
-3. Copy your **tokenId** (keep this secret!)
-4. Find your device's **WiFi dongle registration number** in the Device Management section
+1. Log in to [SolaX Developer Platform](https://developer.solaxcloud.com/)
+2. Navigate to **Application** section
+3. Create a new application and enable **client_credentials** grant type
+4. Copy your **Client ID** and **Client Secret** (keep these secret!)
 
-### 2. Install the Server
+### 2. Identify Your Device Serial Number
+
+1. Log in to [SolaX Developer Platform](https://developer.solaxcloud.com/)
+2. Navigate to **My Account** or device management section
+3. Find your inverter's **device serial number** (e.g., `X3ABCD0123`)
+   - This is NOT the old WiFi dongle registration number used by the legacy SolaX Cloud API
+
+### 3. Install the Server
 
 ```bash
 # Clone or navigate to the repo
@@ -31,7 +38,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
 
-### 3. Configure Credentials
+### 4. Configure Credentials
 
 ```bash
 # Copy the example environment file
@@ -41,20 +48,22 @@ cp .env.example .env
 nano .env
 ```
 
-Add your tokenId and WiFi serial number:
+Add your OAuth2 credentials and device serial number:
 ```
-SOLAX_TOKEN_ID=your_token_here
-SOLAX_WIFI_SN=SUT1234VB1
+SOLAX_CLIENT_ID=your_client_id
+SOLAX_CLIENT_SECRET=your_client_secret
+SOLAX_DEVICE_SN=X3ABCD0123
 ```
 
-### 4. Register with Claude Code
+### 5. Register with Claude Code
 
 To use this server with Claude Code or Claude Desktop:
 
 ```bash
 claude mcp add solax-cloud \
-  --env SOLAX_TOKEN_ID=your_token_id \
-  --env SOLAX_WIFI_SN=your_wifi_sn \
+  --env SOLAX_CLIENT_ID=your_client_id \
+  --env SOLAX_CLIENT_SECRET=your_client_secret \
+  --env SOLAX_DEVICE_SN=your_device_sn \
   --scope user \
   -- uv run --directory /Users/gary/mysrc/claude/solax-cloud-mcp solax-cloud-mcp
 ```
@@ -75,8 +84,9 @@ Add this entry:
       "solax-cloud-mcp"
     ],
     "env": {
-      "SOLAX_TOKEN_ID": "your_token_id",
-      "SOLAX_WIFI_SN": "your_wifi_sn"
+      "SOLAX_CLIENT_ID": "your_client_id",
+      "SOLAX_CLIENT_SECRET": "your_client_secret",
+      "SOLAX_DEVICE_SN": "your_device_sn"
     }
   }
 }
@@ -89,62 +99,88 @@ Once registered, the `get_realtime_data` tool is available in your MCP toolset. 
 ### Tool: `get_realtime_data`
 
 **Arguments:**
-- `wifi_sn` (optional): WiFi dongle registration number. If omitted, defaults to `SOLAX_WIFI_SN` environment variable.
+- `device_sn` (optional): Inverter device serial number. If omitted, defaults to `SOLAX_DEVICE_SN` environment variable.
 
 **Returns:** A structured dictionary containing:
 
 ```json
 {
   "device": {
-    "inverterSn": "XB422****82041",
-    "wifiSn": "SGY****A001",
-    "ratedPower_kW": 4.2,
-    "uploadTime": "2023-05-26 17:00:09",
-    "inverterType": "4"
+    "deviceSn": "X3ABCD0123",
+    "registerNo": "SE123456SP",
+    "dataTime": "2025-05-22 15:13:10",
+    "plantLocalTime": "2025-05-22 15:13:10"
   },
   "status": {
-    "code": "102",
+    "code": 102,
     "description": "Normal"
   },
   "pv": [
-    {"string": 1, "current_A": 0.4, "voltage_V": 421.7, "power_W": 189.0},
-    {"string": 2, "current_A": 0.0, "voltage_V": 0.0, "power_W": 0.0}
+    {"string": 1, "voltage_V": 421.7, "current_A": 0.4, "power_W": 189.0},
+    {"string": 2, "voltage_V": 418.0, "current_A": 0.0, "power_W": 0.0}
   ],
+  "mppt": {
+    "trackers": [
+      {"mppt": 1, "voltage_V": 0.0, "current_A": 0.0, "power_W": 0.0}
+    ],
+    "totalPower_W": null
+  },
   "ac": {
     "phases": [
-      {"phase": 1, "current_A": 0.9, "voltage_V": 230.1, "power_W": 0.0, "frequency_Hz": 50.03}
+      {"phase": 1, "voltage_V": 224.1, "current_A": 0.9, "power_W": 189.0, "frequency_Hz": 50.0},
+      {"phase": 2, "voltage_V": 226.5, "current_A": 0.8, "power_W": 171.0, "frequency_Hz": 50.0}
     ],
-    "totalPower_W": 171.0
+    "totalPower_W": 360.0,
+    "totalReactivePower": 0,
+    "powerFactor": 1.0,
+    "gridFrequency": 50.0
   },
   "energy": {
-    "yieldToday_kWh": 13.6,
-    "yieldTotal_kWh": 31120.6,
-    "feedinEnergy_kWh": 0.0,
-    "consumeEnergy_kWh": 0.0,
-    "pvEnergy_kWh": 0.0,
-    "acEnergyIn_kWh": 0.0,
-    "feedinPower_W": 0.0
+    "dailyYield_kWh": 157.4,
+    "totalYield_kWh": 20465.3,
+    "dailyACOutput_kWh": 160.9,
+    "totalACOutput_kWh": 19907.5
+  },
+  "meter1": {
+    "gridPower_W": 0,
+    "todayImportEnergy_kWh": 0.07,
+    "totalImportEnergy_kWh": 23.28,
+    "todayExportEnergy_kWh": 0.0,
+    "totalExportEnergy_kWh": 64.98
+  },
+  "meter2": {
+    "gridPower_W": 0,
+    "todayImportEnergy_kWh": 0.08,
+    "totalImportEnergy_kWh": 1.39,
+    "todayExportEnergy_kWh": 0.0,
+    "totalExportEnergy_kWh": 0.75
   },
   "battery": {
-    "voltage_V": 0.0,
-    "current_A": 0.0,
-    "power_W": 0.0,
-    "soc_percent": 0.0,
-    "temperature_C": 0.0,
-    "cycles": "0",
-    "chargeEnergy_kWh": 0.0,
-    "dischargeEnergy_kWh": 0.0,
-    "status": {"code": "0", "description": "Normal"}
+    "soc_percent": 85.5,
+    "remainingEnergy_kWh": 1024.8,
+    "soh_percent": 99.2,
+    "chargeDischargePower_W": -150.5,
+    "voltage_V": 409.6,
+    "current_A": -15.2,
+    "temperature_C": 28.3,
+    "cycleTimes": 142,
+    "totalCharge_kWh": 4250.75,
+    "totalDischarge_kWh": 4100.25,
+    "status": {"code": 1, "description": "Work"}
   },
   "eps": {
     "voltage_V": [0.0, 0.0, 0.0],
     "current_A": [0.0, 0.0, 0.0],
-    "power_W": [0.0, 0.0, 0.0],
-    "frequency_Hz": 0.0
+    "activePower_W": [0.0, 0.0, 0.0],
+    "apparentPower_W": [0.0, 0.0, 0.0]
   },
   "temperature": {
-    "radiator_C": 32.0,
-    "board_C": 32.0
+    "inverter_C": 40.4
+  },
+  "misc": {
+    "l1l2Voltage_V": null,
+    "l2l3Voltage_V": null,
+    "l1l3Voltage_V": null
   }
 }
 ```
@@ -163,9 +199,9 @@ Before registering with Claude, you can test the client directly:
 
 ```bash
 uv run --env-file .env python -c \
-  "import asyncio; from solax_cloud_mcp.client import fetch_realtime; \
-   from solax_cloud_mcp.config import get_token_id, get_default_wifi_sn; \
-   print(asyncio.run(fetch_realtime(get_token_id(), get_default_wifi_sn())))"
+  "import asyncio; from solax_cloud_mcp.client import fetch_realtime_data; \
+   from solax_cloud_mcp.config import get_default_device_sn; \
+   print(asyncio.run(fetch_realtime_data(get_default_device_sn())))"
 ```
 
 ### Run Tests
@@ -177,7 +213,9 @@ uv run pytest -v
 Tests include:
 - Response shaping and status decoding
 - Environment variable validation
-- Error handling
+- Error handling and edge cases (battery-less devices, null status codes)
+- Dynamic PV/MPPT parsing
+- Case-insensitive field access
 
 ### Interactive Inspection
 
@@ -187,20 +225,13 @@ If you have the MCP CLI tools installed:
 uv run --env-file .env mcp dev src/solax_cloud_mcp/server.py
 ```
 
-Or with the Node inspector (requires Node.js):
-
-```bash
-uv run --env-file .env npx @modelcontextprotocol/inspector \
-  -- solax-cloud-mcp
-```
-
 ## Rate Limiting
 
-This server respects SolaX Cloud's documented rate limits:
-- **10 calls per minute** per token
-- **10,000 calls per day** per token
+This server respects SolaX Developer Platform's documented rate limits:
+- **100 calls per minute** per token
+- **1,000,000 calls per day** per token
 
-The client automatically enforces a 6-second minimum spacing between calls, which keeps typical usage well within both limits. No manual rate limiting is needed.
+The client automatically enforces a 0.7-second minimum spacing between calls, which keeps typical usage well within both limits. No manual rate limiting is needed.
 
 ## Data Fields Reference
 
@@ -214,63 +245,77 @@ All values are in SI units:
 
 ### Inverter Status Codes
 
+The inverter's `status.code` is an integer from the table below (Appendix 6 from the SolaX Developer Platform API docs). Not all possible codes are listed; consult the full Appendix 6 table on `developer.solaxcloud.com/doc` for the complete set.
+
 | Code | Status | Description |
 |------|--------|-------------|
-| 100 | Waiting | Waiting for operation |
-| 101 | Self-test | Self-test in progress |
-| 102 | Normal | Operating normally |
-| 103 | Recoverable | Recoverable fault |
-| 104 | Permanent | Permanent fault |
-| 105 | Upgrade | Firmware upgrade |
-| 106 | EPS Detect | EPS detection |
-| 107 | Off-grid | Off-grid operation |
-| 108 | Self-test IT | Self-test (Italian regulations) |
-| 109 | Sleep | Sleep mode |
-| 110 | Standby | Standby mode |
-| 111 | PV Wake | Photovoltaic wake-up battery mode |
-| 112 | Gen Detect | Generator detection |
-| 113 | Generator | Generator mode |
-| 114 | Fast Shutdown | Fast shutdown standby |
-| 130 | VPP | Virtual Power Plant mode |
-| 131 | TOU-Self | Time-of-use self-use mode |
-| 132 | TOU-Charge | Time-of-use charging mode |
-| 133 | TOU-Discharge | Time-of-use discharging mode |
+| 100 | Waiting | Waiting |
+| 101 | Self-check | Self-check |
+| 102 | Normal | Normal |
+| 103 | Fault | Fault |
+| 104 | Permanent Fault Mode | Permanent Fault Mode |
+| 105 | Update Mode | Update Mode |
+| 106 | EPS Check Mode | EPS Check Mode |
+| 107 | EPS Mode | EPS Mode |
+| 108 | Self-test | Self-test |
+| 109 | Idle Mode | Idle Mode |
+| 110 | Standby Mode | Standby Mode |
+| 130 | VPP mode | VPP mode |
+| 131 | TOU-Self use | TOU-Self use |
+| 132 | TOU-Charging | TOU-Charging |
+| 133 | TOU-Discharging | TOU-Discharging |
+| 1301-1309 | Advanced control modes | Power/SOC target control, self-consume modes, etc. |
 
-### Battery Status Codes
+### Battery Status Codes (Residential)
+
+The battery's `battery.status.code` is an integer:
 
 | Code | Status |
 |------|--------|
-| 0 | Normal |
-| 1 | Fault |
-| 2 | Disconnected |
+| 0 | Idle |
+| 1 | Work |
 
-### API Error Codes
+### API Error Codes (Appendix 1)
 
 | Code | Message |
 |------|---------|
-| 1001 | Interface Unauthorized (invalid token) |
-| 1002 | Parameter validation failed (invalid wifiSn) |
-| 1003 | Data Unauthorized |
-| 1004 | Duplicate data |
-| 2001 | Operation failed |
-| 2002 | Data not found (device not registered) |
+| 10000 | Operation successful |
+| 10001 | Operation failed |
+| 11500 | System busy, please try again later |
+| 10200 | Operation abnormality, please see the specific message content for details |
+| 10400 | Request not authenticated |
+| 10401 | Username or password incorrect |
+| 10402 | Request access_token authentication failed |
+| 10403 | Interface has no access rights |
+| 10404 | Callback function not configured |
+| 10405 | The number of API calls has been used up |
+| 10406 | The API call rate has reached the upper limit, please try again later |
+| 10500 | User has no device data permission |
+| 10505 | Device unauthorized |
+| 10506 | Plant unauthorized |
 
 ## Troubleshooting
 
-**"SOLAX_TOKEN_ID environment variable not set"**
-- Set the `SOLAX_TOKEN_ID` environment variable or register the server with the correct credentials
+**"SOLAX_CLIENT_ID environment variable not set"**
+- Set the `SOLAX_CLIENT_ID` environment variable or register the server with the correct credentials
 
-**"No wifiSn provided"**
-- Either pass the `wifi_sn` argument to the tool or set the `SOLAX_WIFI_SN` environment variable
+**"SOLAX_CLIENT_SECRET environment variable not set"**
+- Set the `SOLAX_CLIENT_SECRET` environment variable or register the server with the correct credentials
 
-**"SolaX API error 1002: Parameter validation failed"**
-- The `wifiSn` you provided is invalid. Double-check it in your SolaX Cloud Device Management.
+**"No device_sn provided"**
+- Either pass the `device_sn` argument to the tool or set the `SOLAX_DEVICE_SN` environment variable
 
-**"SolaX API error 1001: Interface Unauthorized"**
-- Your `SOLAX_TOKEN_ID` is invalid or has expired. Generate a new token from SolaX Cloud.
+**"SolaX API error 10402: Request access_token authentication failed"**
+- The server will automatically attempt to refresh the access token once; if this persists, your Client Secret may be invalid or revoked. Re-register your OAuth2 application at https://developer.solaxcloud.com/
+
+**"SolaX API error 10505: Device unauthorized"**
+- The device serial number you provided is invalid or not associated with your account. Double-check the device SN in your SolaX Developer Platform account.
+
+**"SolaX API error 10406: The API call rate has reached the upper limit"**
+- The rate limiter is correctly enforced; this should rarely occur under normal usage. If it does, the server automatically backs off. Reduce tool call frequency or wait a few seconds and retry.
 
 **"Network timeout"**
-- SolaX Cloud API is unreachable. Check your internet connection and confirm the service is online.
+- SolaX Developer Platform API is unreachable. Check your internet connection and confirm the service is online at `https://developer.solaxcloud.com/`.
 
 ## Development
 
@@ -282,13 +327,14 @@ solax-cloud-mcp/
 │   ├── __init__.py         # Package metadata
 │   ├── __main__.py         # CLI entry point
 │   ├── server.py           # MCP server and tool definitions
-│   ├── client.py           # HTTP client and SolaX API calls
+│   ├── client.py           # HTTP client and API calls
+│   ├── auth.py             # OAuth2 token management
 │   ├── config.py           # Environment variable handling
 │   └── models.py           # Data models and response shaping
 ├── tests/
 │   ├── fixtures/           # Test data
-│   ├── test_models.py      # Response shaping tests
-│   └── test_config.py      # Configuration tests
+│   ├── test_config.py      # Configuration tests
+│   └── test_models.py      # Response shaping tests
 ├── pyproject.toml          # Project metadata and dependencies
 └── README.md               # This file
 ```
@@ -297,7 +343,7 @@ solax-cloud-mcp/
 
 The server is designed to be minimal and focused. To add more endpoints/tools:
 
-1. Fetch the data from SolaX Cloud API (extend `client.py`)
+1. Fetch the data from SolaX Developer Platform API (extend `client.py`)
 2. Add a response shaping function if needed (extend `models.py`)
 3. Define a new `@server.tool()` in `server.py`
 
@@ -309,4 +355,4 @@ MIT
 
 For issues with this MCP server, open an issue on the repository.
 
-For SolaX Cloud API documentation, refer to [SolaX Cloud](https://www.solaxcloud.com/).
+For SolaX Developer Platform API documentation, refer to [SolaX Developer Platform](https://developer.solaxcloud.com/doc).

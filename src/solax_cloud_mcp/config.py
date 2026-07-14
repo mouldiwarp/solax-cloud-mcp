@@ -3,26 +3,46 @@
 import os
 
 
-def get_token_id() -> str:
-    """Get the SolaX Cloud API token from environment.
+def get_client_id() -> str:
+    """Get the SolaX Developer Platform OAuth2 client ID from environment.
 
     Raises:
-        RuntimeError: if SOLAX_TOKEN_ID is not set.
+        RuntimeError: if SOLAX_CLIENT_ID is not set.
     """
-    token = os.getenv("SOLAX_TOKEN_ID")
-    if not token:
+    client_id = os.getenv("SOLAX_CLIENT_ID")
+    if not client_id:
         raise RuntimeError(
-            "SOLAX_TOKEN_ID environment variable not set. "
-            "Obtain your token from https://www.solaxcloud.com/user-center/ "
-            "(Service → API menu)."
+            "SOLAX_CLIENT_ID environment variable not set. "
+            "Register an OAuth2 application at https://developer.solaxcloud.com/ "
+            "and obtain your Client ID from the Application page."
         )
-    return token
+    return client_id
 
 
-def get_default_wifi_sn() -> str | None:
-    """Get the default WiFi dongle serial number from environment.
+def get_client_secret() -> str:
+    """Get the SolaX Developer Platform OAuth2 client secret from environment.
+
+    Raises:
+        RuntimeError: if SOLAX_CLIENT_SECRET is not set.
+    """
+    client_secret = os.getenv("SOLAX_CLIENT_SECRET")
+    if not client_secret:
+        raise RuntimeError(
+            "SOLAX_CLIENT_SECRET environment variable not set. "
+            "Register an OAuth2 application at https://developer.solaxcloud.com/ "
+            "and obtain your Client Secret from the Application page."
+        )
+    return client_secret
+
+
+def get_default_device_sn() -> str | None:
+    """Get the default device (inverter) serial number from environment.
 
     Returns:
-        The SOLAX_WIFI_SN value if set, None otherwise.
+        The SOLAX_DEVICE_SN value if set, None otherwise.
+
+    Note:
+        This is the inverter's serial number, NOT the old WiFi dongle registration
+        number (wifiSn) used by the legacy SolaX Cloud API.
     """
-    return os.getenv("SOLAX_WIFI_SN")
+    return os.getenv("SOLAX_DEVICE_SN")

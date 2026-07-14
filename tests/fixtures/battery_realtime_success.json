@@ -1,0 +1,23 @@
+{
+  "code": 10000,
+  "message": "Operation successful",
+  "result": [
+    {
+      "deviceStatus": 1,
+      "dataTime": null,
+      "plantLocalTime": "2025-05-22 15:13:10",
+      "deviceSn": "BT123456AB",
+      "registerNo": "BTREG001",
+      "batterySOC": 85.5,
+      "batteryRemainings": 1024.8,
+      "batterySOH": 99.2,
+      "chargeDischargePower": -150.5,
+      "batteryVoltage": 409.6,
+      "batteryCurrent": -15.2,
+      "batteryTemperature": 28.3,
+      "batteryCycleTimes": 142,
+      "totalDevicharg": 4250.75,
+      "totalDeviceDischarge": 4100.25
+    }
+  ]
+}

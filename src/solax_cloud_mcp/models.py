@@ -1,165 +1,282 @@
 """Data models, enums, and response shaping."""
 
-INVERTER_STATUS_DESCRIPTIONS = {
-    "100": "Waiting for operation",
-    "101": "Self-test",
-    "102": "Normal",
-    "103": "Recoverable fault",
-    "104": "Permanent fault",
-    "105": "Firmware upgrade",
-    "106": "EPS detection",
-    "107": "Off-grid",
-    "108": "Self-test mode (Italian)",
-    "109": "Sleep mode",
-    "110": "Standby mode",
-    "111": "Photovoltaic wake-up battery mode",
-    "112": "Generator detection mode",
-    "113": "Generator mode",
-    "114": "Fast shutdown standby mode",
-    "130": "VPP mode",
-    "131": "TOU-Self use",
-    "132": "TOU-Charging",
-    "133": "TOU-Discharging",
-}
-
-BATTERY_STATUS_DESCRIPTIONS = {
-    "0": "Normal",
-    "1": "Fault",
-    "2": "Disconnected",
-}
-
 ERROR_CODE_DESCRIPTIONS = {
-    1001: "Interface Unauthorized",
-    1002: "Parameter validation failed",
-    1003: "Data Unauthorized",
-    1004: "Duplicate data",
-    2001: "Operation failed",
-    2002: "Data not found",
+    10000: "Operation successful",
+    10001: "Operation failed",
+    11500: "System busy, please try again later",
+    10200: "Operation abnormality, please see the specific message content for details",
+    10400: "Request not authenticated",
+    10401: "Username or password incorrect",
+    10402: "Request access_token authentication failed",
+    10403: "Interface has no access rights",
+    10404: "Callback function not configured",
+    10405: "The number of API calls has been used up",
+    10406: "The API call rate has reached the upper limit, please try again later",
+    10500: "User has no device data permission",
+    10505: "Device unauthorized",
+    10506: "Plant unauthorized",
+}
+
+INVERTER_DEVICE_STATUS_DESCRIPTIONS = {
+    100: "Waiting",
+    101: "Self-check",
+    102: "Normal",
+    103: "Fault",
+    104: "Permanent Fault Mode",
+    105: "Update Mode",
+    106: "EPS Check Mode",
+    107: "EPS Mode",
+    108: "Self-test",
+    109: "Idle Mode",
+    110: "Standby Mode",
+    111: "Pv Wake Up Bat Mode",
+    112: "Gen Check Mode",
+    113: "Gen run Mode",
+    114: "RSD Standby",
+    130: "VPP mode",
+    131: "TOU-Self use",
+    132: "TOU-Charging",
+    133: "TOU-Discharging",
+    134: "TOU-Battery off",
+    135: "TOU-Peak Shaving",
+    136: "Normal Mode(Gen)",
+    137: "Normal Mode(BAT-E)",
+    138: "Normal Mode(BAT-H)",
+    139: "EPS mode(BAT-H)",
+    140: "Start Mode",
+    141: "Normal Mode(R-1)",
+    142: "Normal Mode(R-2)",
+    143: "Normal Mode(R-3)",
+    144: "Normal Mode(R-4)",
+    145: "Normal Mode(R-5)",
+    146: "Normal Mode(R-6)",
+    147: "Normal Mode(R-7)",
+    150: "Self Use",
+    151: "Force Time Use",
+    152: "Back Up Mode",
+    153: "Feedin Priority",
+    154: "Demand Mode",
+    155: "ConstPowr Mode",
+    160: "OpenAdr Mode",
+    170: "STOP MODE",
+    171: "DEBUG MODE",
+    174: "Normal(Smart selfuse)",
+    175: "Normal(Smart feedin)",
+    176: "Normal(Smart Bat not discharge)",
+    177: "Normal(WLV 0%)",
+    1301: "Power Control Mode",
+    1302: "Electric Quantity Target Control Mode",
+    1303: "SOC Target Control Mode",
+    1304: "Push Power -Positive/Negative Mode",
+    1305: "Push Power - Zero Mode",
+    1306: "Self-Consume -Charge/Discharge Mode",
+    1307: "Self-Consume - Charge Only Mode",
+    1308: "PV&BAT Individual Setting- Duration Mode",
+    1309: "PV&BAT Individual Setting-Target SOC Mode",
+}
+
+BATTERY_DEVICE_STATUS_DESCRIPTIONS = {
+    0: "Idle",
+    1: "Work",
 }
 
 
-def shape_realtime_response(raw_result: dict) -> dict:
-    """Transform raw SolaX API response into a human-friendly, grouped structure.
+def shape_realtime_response(inverter_result: dict, battery_result: dict | None) -> dict:
+    """Transform raw SolaX Developer Platform API responses into a human-friendly structure.
 
     Args:
-        raw_result: The 'result' object from a successful SolaX realtimeInfo response.
+        inverter_result: The inverter device data dict from the realtime_data endpoint.
+        battery_result: The battery device data dict, or None if no battery data available.
 
     Returns:
         A dictionary with grouped, decoded fields suitable for LLM consumption.
     """
-    # Extract PV strings, dropping those with null values (unused MPPT trackers)
+    # Normalize all keys to lowercase for case-insensitive access
+    # (docs show mixed casing inconsistency: field table says epsl1Voltage, example shows EPSL1Voltage)
+    inverter = {k.lower(): v for k, v in inverter_result.items()}
+    mppt_map = inverter.get("mpptmap", {})
+    if isinstance(mppt_map, dict):
+        mppt_map = {k.lower(): v for k, v in mppt_map.items()}
+    pv_map = inverter.get("pvmap", {})
+    if isinstance(pv_map, dict):
+        pv_map = {k.lower(): v for k, v in pv_map.items()}
+
+    # Dynamic PV string parsing: extract pv{N}voltage, pv{N}current, pv{N}power
     pv_strings = []
-    for i in range(1, 5):
-        idc_key = f"idc{i}"
-        vdc_key = f"vdc{i}"
-        powerdc_key = f"powerdc{i}"
-        if idc_key in raw_result and raw_result[idc_key] is not None:
+    pv_indices = set()
+    for key in pv_map.keys():
+        if key.startswith("pv") and any(key.endswith(s) for s in ["voltage", "current", "power"]):
+            # Extract index: pv1voltage -> 1
+            idx_str = key[2:-7]  # Remove 'pv' prefix and '_voltage/_current/_power' suffix
+            try:
+                idx = int(idx_str)
+                pv_indices.add(idx)
+            except ValueError:
+                pass
+
+    for idx in sorted(pv_indices):
+        voltage = pv_map.get(f"pv{idx}voltage")
+        current = pv_map.get(f"pv{idx}current")
+        power = pv_map.get(f"pv{idx}power")
+        # Drop if all three are None/null
+        if voltage is not None or current is not None or power is not None:
             pv_strings.append({
-                "string": i,
-                "current_A": raw_result.get(idc_key),
-                "voltage_V": raw_result.get(vdc_key),
-                "power_W": raw_result.get(powerdc_key),
+                "string": idx,
+                "voltage_V": voltage,
+                "current_A": current,
+                "power_W": power,
             })
 
-    # Extract AC phases, dropping those with all-zero values
+    # Dynamic MPPT tracking: extract mppt{N}voltage, mppt{N}current, mppt{N}power
+    mppt_trackers = []
+    mppt_indices = set()
+    for key in mppt_map.keys():
+        if key.startswith("mppt") and any(key.endswith(s) for s in ["voltage", "current", "power"]):
+            idx_str = key[4:-7]
+            try:
+                idx = int(idx_str)
+                mppt_indices.add(idx)
+            except ValueError:
+                pass
+
+    for idx in sorted(mppt_indices):
+        voltage = mppt_map.get(f"mppt{idx}voltage")
+        current = mppt_map.get(f"mppt{idx}current")
+        power = mppt_map.get(f"mppt{idx}power")
+        if voltage is not None or current is not None or power is not None:
+            mppt_trackers.append({
+                "mppt": idx,
+                "voltage_V": voltage,
+                "current_A": current,
+                "power_W": power,
+            })
+
+    # Extract AC phases (fixed 3-phase), drop if all-zero
     ac_phases = []
     for i in range(1, 4):
-        iac_key = f"iac{i}"
-        vac_key = f"vac{i}"
-        pac_key = f"pac{i}"
-        fac_key = f"fac{i}"
-        iac = raw_result.get(iac_key, 0)
-        vac = raw_result.get(vac_key, 0)
-        pac = raw_result.get(pac_key, 0)
-        fac = raw_result.get(fac_key, 0)
-        if any([iac, vac, pac, fac]):
+        v_key = f"acvoltage{i}"
+        i_key = f"accurrent{i}"
+        p_key = f"acpower{i}"
+        f_key = f"acfrequency{i}"
+        v = inverter.get(v_key, 0)
+        i = inverter.get(i_key, 0)
+        p = inverter.get(p_key, 0)
+        f = inverter.get(f_key, 0)
+        if any([v, i, p, f]):
             ac_phases.append({
                 "phase": i,
-                "current_A": iac,
-                "voltage_V": vac,
-                "power_W": pac,
-                "frequency_Hz": fac,
+                "voltage_V": v,
+                "current_A": i,
+                "power_W": p,
+                "frequency_Hz": f,
             })
 
-    # Extract inverter status
-    inverter_status_code = str(raw_result.get("inverterStatus", ""))
+    # Inverter status: deviceStatus is now an int or null
+    device_status = inverter.get("devicestatus")
     inverter_status = {
-        "code": inverter_status_code,
-        "description": INVERTER_STATUS_DESCRIPTIONS.get(
-            inverter_status_code, "Unknown"
+        "code": device_status,
+        "description": (
+            INVERTER_DEVICE_STATUS_DESCRIPTIONS.get(device_status, f"Unknown status code {device_status}")
+            if device_status is not None
+            else "Not reported"
         ),
     }
 
-    # Extract battery status
-    battery_status_code = str(raw_result.get("batStatus", ""))
-    battery_status = {
-        "code": battery_status_code,
-        "description": BATTERY_STATUS_DESCRIPTIONS.get(battery_status_code, "Unknown"),
-    }
+    # Battery section: None if no battery_result, else build battery object
+    battery = None
+    if battery_result is not None:
+        battery_dict = {k.lower(): v for k, v in battery_result.items()}
+        battery_status_code = battery_dict.get("devicestatus")
+        battery = {
+            "soc_percent": battery_dict.get("batterysoc"),
+            "remainingEnergy_kWh": battery_dict.get("batteryremainings"),
+            "soh_percent": battery_dict.get("batterysoh"),
+            "chargeDischargePower_W": battery_dict.get("chargedischargepower"),
+            "voltage_V": battery_dict.get("batteryvoltage"),
+            "current_A": battery_dict.get("batterycurrent"),
+            "temperature_C": battery_dict.get("batterytemperature"),
+            "cycleTimes": battery_dict.get("batterycycletimes"),
+            "totalCharge_kWh": battery_dict.get("totaldevicharg"),
+            "totalDischarge_kWh": battery_dict.get("totaldevicedischarge"),
+            "status": {
+                "code": battery_status_code,
+                "description": (
+                    BATTERY_DEVICE_STATUS_DESCRIPTIONS.get(battery_status_code, f"Unknown status code {battery_status_code}")
+                    if battery_status_code is not None
+                    else "Not reported"
+                ),
+            },
+        }
 
     return {
         "device": {
-            "inverterSn": raw_result.get("inverterSn"),
-            "wifiSn": raw_result.get("sn"),
-            "ratedPower_kW": raw_result.get("ratedPower"),
-            "uploadTime": raw_result.get("uploadTime"),
-            "inverterType": raw_result.get("inverterType"),
+            "deviceSn": inverter.get("devicesn"),
+            "registerNo": inverter.get("registerno"),
+            "dataTime": inverter.get("datatime"),
+            "plantLocalTime": inverter.get("plantlocaltime"),
         },
         "status": inverter_status,
         "pv": pv_strings,
+        "mppt": {
+            "trackers": mppt_trackers,
+            "totalPower_W": mppt_map.get("mpptotalinputpower"),
+        },
         "ac": {
             "phases": ac_phases,
-            "totalPower_W": raw_result.get("acpower"),
+            "totalPower_W": inverter.get("totalactivepower"),
+            "totalReactivePower": inverter.get("totalreactivepower"),
+            "powerFactor": inverter.get("totalpowerfactor"),
+            "gridFrequency": inverter.get("gridfrequency"),
         },
         "energy": {
-            "yieldToday_kWh": raw_result.get("yieldtoday"),
-            "yieldTotal_kWh": raw_result.get("yieldtotal"),
-            "feedinEnergy_kWh": raw_result.get("feedinenergy"),
-            "consumeEnergy_kWh": raw_result.get("consumeenergy"),
-            "pvEnergy_kWh": raw_result.get("pvenergy"),
-            "acEnergyIn_kWh": raw_result.get("acenergyin"),
-            "feedinPower_W": raw_result.get("feedinpower"),
+            "dailyYield_kWh": inverter.get("dailyyield"),
+            "totalYield_kWh": inverter.get("totalyield"),
+            "dailyACOutput_kWh": inverter.get("dailyacoutput"),
+            "totalACOutput_kWh": inverter.get("totalacoutput"),
         },
-        "battery": {
-            "voltage_V": raw_result.get("batVoltage"),
-            "current_A": raw_result.get("batCurrent"),
-            "power_W": raw_result.get("batPower"),
-            "soc_percent": raw_result.get("soc"),
-            "temperature_C": raw_result.get("battemper"),
-            "cycles": raw_result.get("batcycle"),
-            "chargeEnergy_kWh": raw_result.get("chargeEnergy"),
-            "dischargeEnergy_kWh": raw_result.get("dischargeEnergy"),
-            "status": battery_status,
-        },
-        "eps": {
-            "voltage_V": [
-                raw_result.get("veps1"),
-                raw_result.get("veps2"),
-                raw_result.get("veps3"),
-            ],
-            "current_A": [
-                raw_result.get("ieps1"),
-                raw_result.get("ieps2"),
-                raw_result.get("ieps3"),
-            ],
-            "power_W": [
-                raw_result.get("peps1"),
-                raw_result.get("peps2"),
-                raw_result.get("peps3"),
-            ],
-            "frequency_Hz": raw_result.get("epsfreq"),
-        },
-        "temperature": {
-            "radiator_C": raw_result.get("temperature"),
-            "board_C": raw_result.get("temperBoard"),
+        "meter1": {
+            "gridPower_W": inverter.get("gridpower"),
+            "todayImportEnergy_kWh": inverter.get("todayimportenergy"),
+            "totalImportEnergy_kWh": inverter.get("totalimportenergy"),
+            "todayExportEnergy_kWh": inverter.get("todayexportenergy"),
+            "totalExportEnergy_kWh": inverter.get("totalexportenergy"),
         },
         "meter2": {
-            "feedinPower_W": raw_result.get("feedinpowerM2"),
-            "feedinEnergy_kWh": raw_result.get("feedinenergyM2"),
-            "consumeEnergy_kWh": raw_result.get("consumeenergyM2"),
+            "gridPower_W": inverter.get("gridpowerm2"),
+            "todayImportEnergy_kWh": inverter.get("todayimportenergym2"),
+            "totalImportEnergy_kWh": inverter.get("totalimportenergym2"),
+            "todayExportEnergy_kWh": inverter.get("todayexportenergym2"),
+            "totalExportEnergy_kWh": inverter.get("totalexportenergym2"),
+        },
+        "battery": battery,
+        "eps": {
+            "voltage_V": [
+                inverter.get("epsl1voltage"),
+                inverter.get("epsl2voltage"),
+                inverter.get("epsl3voltage"),
+            ],
+            "current_A": [
+                inverter.get("epsl1current"),
+                inverter.get("epsl2current"),
+                inverter.get("epsl3current"),
+            ],
+            "activePower_W": [
+                inverter.get("epsl1activepower"),
+                inverter.get("epsl2activepower"),
+                inverter.get("epsl3activepower"),
+            ],
+            "apparentPower_W": [
+                inverter.get("epsl1apparentpower"),
+                inverter.get("epsl2apparentpower"),
+                inverter.get("epsl3apparentpower"),
+            ],
+        },
+        "temperature": {
+            "inverter_C": inverter.get("invertertemperature"),
         },
         "misc": {
-            "surplusEnergy_percent": raw_result.get("surplusEnergy"),
-            "timeZone": raw_result.get("timeZone"),
+            "l1l2Voltage_V": inverter.get("l1l2voltage"),
+            "l2l3Voltage_V": inverter.get("l2l3voltage"),
+            "l1l3Voltage_V": inverter.get("l1l3voltage"),
         },
     }
