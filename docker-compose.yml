@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  solax-http:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # For Raspberry Pi 3 64-bit
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: solax-cloud-http
+    ports:
+      - "8000:8000"
+    environment:
+      # SolaX API credentials (load from .env file)
+      SOLAX_CLIENT_ID: ${SOLAX_CLIENT_ID}
+      SOLAX_CLIENT_SECRET: ${SOLAX_CLIENT_SECRET}
+      SOLAX_DEVICE_SN: ${SOLAX_DEVICE_SN}
+      # HTTP server config
+      TRANSPORT: http
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8000
+      # HTTP API authentication
+      HTTP_API_KEY: ${HTTP_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Optional: Uncomment to run MCP mode instead
+  # solax-mcp:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     SOLAX_CLIENT_ID: ${SOLAX_CLIENT_ID}
+  #     SOLAX_CLIENT_SECRET: ${SOLAX_CLIENT_SECRET}
+  #     SOLAX_DEVICE_SN: ${SOLAX_DEVICE_SN}
+  #     TRANSPORT: stdio
+  #   stdin_open: true
+  #   tty: true
+  #   restart: unless-stopped

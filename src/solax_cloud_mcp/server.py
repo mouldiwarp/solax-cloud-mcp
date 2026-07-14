@@ -14,6 +14,76 @@ CLIENT_SECRET = get_client_secret()
 server = FastMCP("solax-cloud")
 
 
+async def get_realtime_data_impl(device_sn: str | None = None) -> dict:
+    """Core implementation of get_realtime_data, shared by MCP and HTTP modes."""
+    effective_sn = device_sn or get_default_device_sn()
+    if not effective_sn:
+        raise ValueError(
+            "No device_sn provided: either pass device_sn argument to this tool or set SOLAX_DEVICE_SN environment variable"
+        )
+
+    try:
+        inverter_raw, battery_raw = await fetch_realtime_data(effective_sn)
+    except SolaxApiError as e:
+        raise ValueError(f"SolaX API error: {e}") from e
+
+    shaped = shape_realtime_response(inverter_raw, battery_raw)
+    return shaped
+
+
+async def set_battery_self_use_mode_impl(
+    device_sn: str | None = None,
+    min_soc: int = 10,
+    charge_upper_soc: int = 100,
+    charge_from_grid_enable: int = 1,
+    charge_start_time_period1: str | None = None,
+    charge_end_time_period1: str | None = None,
+    discharge_start_time_period1: str | None = None,
+    discharge_end_time_period1: str | None = None,
+    enable_time_period2: int = 0,
+    charge_start_time_period2: str | None = None,
+    charge_end_time_period2: str | None = None,
+    discharge_start_time_period2: str | None = None,
+    discharge_end_time_period2: str | None = None,
+) -> dict:
+    """Core implementation of set_battery_self_use_mode, shared by MCP and HTTP modes."""
+    effective_sn = device_sn or get_default_device_sn()
+    if not effective_sn:
+        raise ValueError(
+            "No device_sn provided: either pass device_sn argument or set SOLAX_DEVICE_SN environment variable"
+        )
+
+    if not (10 <= min_soc <= 100):
+        raise ValueError(f"min_soc must be between 10 and 100, got {min_soc}")
+    if not (10 <= charge_upper_soc <= 100):
+        raise ValueError(f"charge_upper_soc must be between 10 and 100, got {charge_upper_soc}")
+    if min_soc > charge_upper_soc:
+        raise ValueError(
+            f"min_soc ({min_soc}) cannot be greater than charge_upper_soc ({charge_upper_soc})"
+        )
+
+    try:
+        response = await set_self_use_mode(
+            device_sn=effective_sn,
+            min_soc=min_soc,
+            charge_upper_soc=charge_upper_soc,
+            charge_from_grid_enable=charge_from_grid_enable,
+            charge_start_time_period1=charge_start_time_period1,
+            charge_end_time_period1=charge_end_time_period1,
+            discharge_start_time_period1=discharge_start_time_period1,
+            discharge_end_time_period1=discharge_end_time_period1,
+            enable_time_period2=enable_time_period2,
+            charge_start_time_period2=charge_start_time_period2,
+            charge_end_time_period2=charge_end_time_period2,
+            discharge_start_time_period2=discharge_start_time_period2,
+            discharge_end_time_period2=discharge_end_time_period2,
+        )
+    except SolaxApiError as e:
+        raise ValueError(f"SolaX API error: {e}") from e
+
+    return response
+
+
 @server.tool()
 async def get_realtime_data(device_sn: str | None = None) -> dict:
     """Fetch real-time solar inverter data from SolaX Developer Platform.
@@ -45,22 +115,7 @@ async def get_realtime_data(device_sn: str | None = None) -> dict:
     Raises:
         ToolError: if credentials are invalid, the device is not found, or the API fails.
     """
-    # Resolve device_sn: use passed value, fall back to default, raise if neither available
-    effective_sn = device_sn or get_default_device_sn()
-    if not effective_sn:
-        raise ValueError(
-            "No device_sn provided: either pass device_sn argument to this tool or set SOLAX_DEVICE_SN environment variable"
-        )
-
-    # Fetch raw data from SolaX API
-    try:
-        inverter_raw, battery_raw = await fetch_realtime_data(effective_sn)
-    except SolaxApiError as e:
-        raise ValueError(f"SolaX API error: {e}") from e
-
-    # Shape the response for the LLM
-    shaped = shape_realtime_response(inverter_raw, battery_raw)
-    return shaped
+    return await get_realtime_data_impl(device_sn)
 
 
 @server.tool()
@@ -112,44 +167,21 @@ async def set_battery_self_use_mode(
     Raises:
         ToolError: if the inverter is offline, credentials are invalid, or the API fails.
     """
-    # Resolve device_sn
-    effective_sn = device_sn or get_default_device_sn()
-    if not effective_sn:
-        raise ValueError(
-            "No device_sn provided: either pass device_sn argument or set SOLAX_DEVICE_SN environment variable"
-        )
-
-    # Validate SOC ranges
-    if not (10 <= min_soc <= 100):
-        raise ValueError(f"min_soc must be between 10 and 100, got {min_soc}")
-    if not (10 <= charge_upper_soc <= 100):
-        raise ValueError(f"charge_upper_soc must be between 10 and 100, got {charge_upper_soc}")
-    if min_soc > charge_upper_soc:
-        raise ValueError(
-            f"min_soc ({min_soc}) cannot be greater than charge_upper_soc ({charge_upper_soc})"
-        )
-
-    # Call the API
-    try:
-        response = await set_self_use_mode(
-            device_sn=effective_sn,
-            min_soc=min_soc,
-            charge_upper_soc=charge_upper_soc,
-            charge_from_grid_enable=charge_from_grid_enable,
-            charge_start_time_period1=charge_start_time_period1,
-            charge_end_time_period1=charge_end_time_period1,
-            discharge_start_time_period1=discharge_start_time_period1,
-            discharge_end_time_period1=discharge_end_time_period1,
-            enable_time_period2=enable_time_period2,
-            charge_start_time_period2=charge_start_time_period2,
-            charge_end_time_period2=charge_end_time_period2,
-            discharge_start_time_period2=discharge_start_time_period2,
-            discharge_end_time_period2=discharge_end_time_period2,
-        )
-    except SolaxApiError as e:
-        raise ValueError(f"SolaX API error: {e}") from e
-
-    return response
+    return await set_battery_self_use_mode_impl(
+        device_sn=device_sn,
+        min_soc=min_soc,
+        charge_upper_soc=charge_upper_soc,
+        charge_from_grid_enable=charge_from_grid_enable,
+        charge_start_time_period1=charge_start_time_period1,
+        charge_end_time_period1=charge_end_time_period1,
+        discharge_start_time_period1=discharge_start_time_period1,
+        discharge_end_time_period1=discharge_end_time_period1,
+        enable_time_period2=enable_time_period2,
+        charge_start_time_period2=charge_start_time_period2,
+        charge_end_time_period2=charge_end_time_period2,
+        discharge_start_time_period2=discharge_start_time_period2,
+        discharge_end_time_period2=discharge_end_time_period2,
+    )
 
 
 def main() -> None:

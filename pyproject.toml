@@ -13,6 +13,7 @@ authors = [{name = "Gary Mason", email = "masongary44@gmail.com"}]
 dependencies = [
     "mcp[cli]>=1.2.0",
     "httpx>=0.27",
+    "fastapi>=0.104",
 ]
 
 [dependency-groups]
