@@ -153,18 +153,18 @@ def shape_realtime_response(inverter_result: dict, battery_result: dict | None) 
 
     # Extract AC phases (fixed 3-phase), drop if all-zero
     ac_phases = []
-    for i in range(1, 4):
-        v_key = f"acvoltage{i}"
-        i_key = f"accurrent{i}"
-        p_key = f"acpower{i}"
-        f_key = f"acfrequency{i}"
+    for phase in range(1, 4):
+        v_key = f"acvoltage{phase}"
+        i_key = f"accurrent{phase}"
+        p_key = f"acpower{phase}"
+        f_key = f"acfrequency{phase}"
         v = inverter.get(v_key, 0)
         i = inverter.get(i_key, 0)
         p = inverter.get(p_key, 0)
         f = inverter.get(f_key, 0)
         if any([v, i, p, f]):
             ac_phases.append({
-                "phase": i,
+                "phase": phase,
                 "voltage_V": v,
                 "current_A": i,
                 "power_W": p,
@@ -219,7 +219,7 @@ def shape_realtime_response(inverter_result: dict, battery_result: dict | None) 
         "pv": pv_strings,
         "mppt": {
             "trackers": mppt_trackers,
-            "totalPower_W": mppt_map.get("mpptotalinputpower"),
+            "totalPower_W": inverter.get("mppttotalinputpower"),
         },
         "ac": {
             "phases": ac_phases,

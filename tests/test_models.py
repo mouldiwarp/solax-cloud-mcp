@@ -90,6 +90,13 @@ def test_mppt_dynamic_parsing(inverter_fixture):
     assert "totalPower_W" in mppt
 
 
+def test_mppt_total_power_key_matches_raw_field(inverter_fixture):
+    """Regression: mppt.totalPower_W must read MPPTTotalInputPower (double 't'),
+    not a mistyped single-'t' key that would silently always resolve to None."""
+    shaped = shape_realtime_response(inverter_fixture, None)
+    assert shaped["mppt"]["totalPower_W"] == 360.0
+
+
 def test_ac_phases_structure(inverter_fixture):
     """Test AC phases are correctly structured."""
     shaped = shape_realtime_response(inverter_fixture, None)
@@ -99,6 +106,16 @@ def test_ac_phases_structure(inverter_fixture):
     assert "totalReactivePower" in ac_data
     assert "powerFactor" in ac_data
     assert "gridFrequency" in ac_data
+
+
+def test_ac_phase_numbers_are_not_current_values(inverter_fixture):
+    """Regression: 'phase' must be the phase index (1/2/3), not the AC current
+    value that a shadowed loop variable previously leaked into that field."""
+    shaped = shape_realtime_response(inverter_fixture, None)
+    phases = shaped["ac"]["phases"]
+    assert [p["phase"] for p in phases] == [1, 2, 3]
+    # Fixture: acCurrent1=0.9, acCurrent2=0.8, acCurrent3=0.0 (all-zero phase 3 dropped)
+    assert [p["phase"] for p in phases] != [p["current_A"] for p in phases]
 
 
 def test_energy_fields_passthrough(inverter_fixture):

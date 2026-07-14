@@ -76,7 +76,7 @@
       "l1l3Voltage": null,
       "totalReactivePower": 0,
       "totalActivePower": 360.0,
-      "MPPTTotalInputPower": null
+      "MPPTTotalInputPower": 360.0
     }
   ]
 }

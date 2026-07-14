@@ -67,58 +67,58 @@ async def _request_realtime(
     except auth.SolaxAuthError as e:
         raise SolaxApiError(f"Authentication failed: {e}") from e
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                REALTIME_DATA_URL,
-                params=params,
-                headers={"Authorization": f"bearer {token}"},
-            )
-    except httpx.TimeoutException as e:
-        raise SolaxApiError(f"Network timeout: {e}") from e
-    except httpx.RequestError as e:
-        raise SolaxApiError(f"Network error: {e}") from e
-
-    # Check HTTP status
-    if response.status_code != 200:
-        raise SolaxApiError(
-            f"HTTP {response.status_code}: {response.text}"
-        )
-
-    # Parse JSON
-    try:
-        body = response.json()
-    except ValueError as e:
-        raise SolaxApiError(f"Invalid JSON response: {e}") from e
-
-    # Check API response code (10000 = success for data endpoints)
-    code = body.get("code")
-    if code == 10402:
-        # Access token auth failed; invalidate and retry once
-        auth.invalidate_token()
-        try:
-            token = await auth.get_access_token()
-        except auth.SolaxAuthError as e:
-            raise SolaxApiError(f"Re-authentication failed after 10402: {e}") from e
-
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
                 REALTIME_DATA_URL,
                 params=params,
                 headers={"Authorization": f"bearer {token}"},
             )
+        except httpx.TimeoutException as e:
+            raise SolaxApiError(f"Network timeout: {e}") from e
         except httpx.RequestError as e:
-            raise SolaxApiError(f"Retry after 10402 failed: {e}") from e
+            raise SolaxApiError(f"Network error: {e}") from e
 
+        # Check HTTP status
         if response.status_code != 200:
-            raise SolaxApiError(f"Retry: HTTP {response.status_code}: {response.text}")
+            raise SolaxApiError(
+                f"HTTP {response.status_code}: {response.text}"
+            )
 
+        # Parse JSON
         try:
             body = response.json()
         except ValueError as e:
-            raise SolaxApiError(f"Retry: Invalid JSON: {e}") from e
+            raise SolaxApiError(f"Invalid JSON response: {e}") from e
 
+        # Check API response code (10000 = success for data endpoints)
         code = body.get("code")
+        if code == 10402:
+            # Access token auth failed; invalidate and retry once
+            auth.invalidate_token()
+            try:
+                token = await auth.get_access_token()
+            except auth.SolaxAuthError as e:
+                raise SolaxApiError(f"Re-authentication failed after 10402: {e}") from e
+
+            try:
+                response = await client.get(
+                    REALTIME_DATA_URL,
+                    params=params,
+                    headers={"Authorization": f"bearer {token}"},
+                )
+            except httpx.RequestError as e:
+                raise SolaxApiError(f"Retry after 10402 failed: {e}") from e
+
+            if response.status_code != 200:
+                raise SolaxApiError(f"Retry: HTTP {response.status_code}: {response.text}")
+
+            try:
+                body = response.json()
+            except ValueError as e:
+                raise SolaxApiError(f"Retry: Invalid JSON: {e}") from e
+
+            code = body.get("code")
 
     if code != 10000:
         description = ERROR_CODE_DESCRIPTIONS.get(code, f"Unknown code {code}")
