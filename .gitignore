@@ -10,3 +10,8 @@ build/
 .coverage
 htmlcov/
 context/
+
+# Vim swap files
+*.swp
+*.swo
+*~
