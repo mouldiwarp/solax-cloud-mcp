@@ -1,8 +1,8 @@
-"""MCP server for SolaX Developer Platform real-time data."""
+"""MCP server for SolaX Developer Platform real-time data and control."""
 
 from mcp.server.fastmcp import FastMCP
 
-from .client import SolaxApiError, fetch_realtime_data
+from .client import SolaxApiError, fetch_realtime_data, set_self_use_mode
 from .config import get_client_id, get_client_secret, get_default_device_sn
 from .models import shape_realtime_response
 
@@ -61,6 +61,95 @@ async def get_realtime_data(device_sn: str | None = None) -> dict:
     # Shape the response for the LLM
     shaped = shape_realtime_response(inverter_raw, battery_raw)
     return shaped
+
+
+@server.tool()
+async def set_battery_self_use_mode(
+    device_sn: str | None = None,
+    min_soc: int = 10,
+    charge_upper_soc: int = 100,
+    charge_from_grid_enable: int = 1,
+    charge_start_time_period1: str | None = None,
+    charge_end_time_period1: str | None = None,
+    discharge_start_time_period1: str | None = None,
+    discharge_end_time_period1: str | None = None,
+    enable_time_period2: int = 0,
+    charge_start_time_period2: str | None = None,
+    charge_end_time_period2: str | None = None,
+    discharge_start_time_period2: str | None = None,
+    discharge_end_time_period2: str | None = None,
+) -> dict:
+    """Set inverter battery to Self Use Mode with configurable charging thresholds.
+
+    Self Use Mode is ideal for automated control based on conditions like weather.
+    You can set minimum SOC (don't discharge below), maximum charge SOC (don't charge above),
+    and optionally configure time-based charge/discharge periods (e.g., charge during peak solar,
+    discharge during high-rate periods).
+
+    Example automation scenarios:
+    - Reduce charging threshold on cloudy days to preserve grid import reserves
+    - Increase charging threshold on clear days to maximize solar self-consumption
+    - Prevent overnight charging from grid during expensive peak hours
+
+    Args:
+        device_sn: Serial number of the inverter. If omitted, uses SOLAX_DEVICE_SN.
+        min_soc: Minimum SOC (%), range [10, 100]. Battery won't discharge below this. Default: 10%.
+        charge_upper_soc: Maximum charging SOC (%), range [10, 100]. Battery won't charge above this. Default: 100%.
+        charge_from_grid_enable: Allow charging from grid (0=no, 1=yes). Default: 1 (enabled).
+        charge_start_time_period1: Optional start time for charging period 1 (HH:MM format, e.g., "06:00").
+        charge_end_time_period1: Optional end time for charging period 1 (HH:MM format, e.g., "18:00").
+        discharge_start_time_period1: Optional start time for discharge period 1 (HH:MM format).
+        discharge_end_time_period1: Optional end time for discharge period 1 (HH:MM format).
+        enable_time_period2: Enable second time period (0=disabled, 1=enabled). Default: 0.
+        charge_start_time_period2: Optional start time for charging period 2 (HH:MM format).
+        charge_end_time_period2: Optional end time for charging period 2 (HH:MM format).
+        discharge_start_time_period2: Optional start time for discharge period 2 (HH:MM format).
+        discharge_end_time_period2: Optional end time for discharge period 2 (HH:MM format).
+
+    Returns:
+        API response confirming the command was sent to the inverter.
+
+    Raises:
+        ToolError: if the inverter is offline, credentials are invalid, or the API fails.
+    """
+    # Resolve device_sn
+    effective_sn = device_sn or get_default_device_sn()
+    if not effective_sn:
+        raise ValueError(
+            "No device_sn provided: either pass device_sn argument or set SOLAX_DEVICE_SN environment variable"
+        )
+
+    # Validate SOC ranges
+    if not (10 <= min_soc <= 100):
+        raise ValueError(f"min_soc must be between 10 and 100, got {min_soc}")
+    if not (10 <= charge_upper_soc <= 100):
+        raise ValueError(f"charge_upper_soc must be between 10 and 100, got {charge_upper_soc}")
+    if min_soc > charge_upper_soc:
+        raise ValueError(
+            f"min_soc ({min_soc}) cannot be greater than charge_upper_soc ({charge_upper_soc})"
+        )
+
+    # Call the API
+    try:
+        response = await set_self_use_mode(
+            device_sn=effective_sn,
+            min_soc=min_soc,
+            charge_upper_soc=charge_upper_soc,
+            charge_from_grid_enable=charge_from_grid_enable,
+            charge_start_time_period1=charge_start_time_period1,
+            charge_end_time_period1=charge_end_time_period1,
+            discharge_start_time_period1=discharge_start_time_period1,
+            discharge_end_time_period1=discharge_end_time_period1,
+            enable_time_period2=enable_time_period2,
+            charge_start_time_period2=charge_start_time_period2,
+            charge_end_time_period2=charge_end_time_period2,
+            discharge_start_time_period2=discharge_start_time_period2,
+            discharge_end_time_period2=discharge_end_time_period2,
+        )
+    except SolaxApiError as e:
+        raise ValueError(f"SolaX API error: {e}") from e
+
+    return response
 
 
 def main() -> None:
